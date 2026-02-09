@@ -7,17 +7,47 @@ const {
 } = require("./back/InfoCOZMO");
 
 const app = express();
+
 const PORT = process.env.PORT || 3000;
 const HOST = "0.0.0.0";
 
+let indiceListo = false;
+let errorCarga = null;
+
 app.use(express.static(path.join(__dirname, "public")));
 
-// Healthcheck simple (útil para validar que está arriba)
+// Health para Render
 app.get("/health", (req, res) => {
-  res.status(200).json({ ok: true, service: "consultor_cartera" });
+  if (errorCarga) {
+    return res.status(500).json({
+      ok: false,
+      status: "error_carga_excel",
+      error: errorCarga
+    });
+  }
+
+  return res.status(200).json({
+    ok: true,
+    status: indiceListo ? "ready" : "loading"
+  });
 });
 
 app.get("/api/cozmo/buscar", (req, res) => {
+  if (errorCarga) {
+    return res.status(500).json({
+      ok: false,
+      mensaje: "Error cargando el Excel en servidor.",
+      error: errorCarga
+    });
+  }
+
+  if (!indiceListo) {
+    return res.status(503).json({
+      ok: false,
+      mensaje: "El sistema aún está cargando datos. Intenta en unos segundos."
+    });
+  }
+
   const telefono = limpiarTelefono(req.query.telefono || "");
 
   if (!/^\d{10}$/.test(telefono)) {
@@ -44,15 +74,20 @@ app.get("/api/cozmo/buscar", (req, res) => {
   });
 });
 
-(async () => {
-  try {
-    await cargarIndiceCozmo();
+// 1) Primero abre puerto (Render lo detecta)
+app.listen(PORT, HOST, () => {
+  console.log(`🚀 Servidor escuchando en ${HOST}:${PORT}`);
 
-    app.listen(PORT, HOST, () => {
-      console.log(`🚀 Servidor listo en http://${HOST}:${PORT}`);
-    });
-  } catch (error) {
-    console.error("❌ Error al iniciar:", error.message);
-    process.exit(1);
-  }
-})();
+  // 2) Después carga Excel (en segundo plano dentro del mismo proceso)
+  (async () => {
+    try {
+      console.log("⏳ Cargando índice COZMO...");
+      await cargarIndiceCozmo();
+      indiceListo = true;
+      console.log("✅ Índice COZMO listo para consultas.");
+    } catch (err) {
+      errorCarga = err?.message || String(err);
+      console.error("❌ Error cargando índice:", errorCarga);
+    }
+  })();
+});

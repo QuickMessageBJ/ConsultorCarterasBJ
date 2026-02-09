@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Consulta COZMO</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <div>
+        <h1 class="brand">Consulta COZMO</h1>
+        <p class="subtitle">Búsqueda por teléfono (10 dígitos)</p>
+      </div>
+      <a class="btn btn-ghost" href="/index.html">← Volver al inicio</a>
+    </div>
+
+    <div class="card">
+      <div class="card-body">
+        <div class="form-row">
+          <input
+            id="telefono"
+            class="input"
+            type="text"
+            maxlength="10"
+            placeholder="Ejemplo: 5512345678"
+          />
+          <button id="btnBuscar" class="btn btn-primary">Buscar</button>
+        </div>
+
+        <div id="kpi" class="kpi"></div>
+        <div id="mensaje" class="msg"></div>
+        <div id="resultado" class="table-wrap" style="display:none;"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const input = document.getElementById("telefono");
+    const btn = document.getElementById("btnBuscar");
+    const mensaje = document.getElementById("mensaje");
+    const resultado = document.getElementById("resultado");
+    const kpi = document.getElementById("kpi");
+
+    input.addEventListener("input", () => {
+      input.value = input.value.replace(/\D/g, "").slice(0, 10);
+    });
+
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") buscar();
+    });
+
+    btn.addEventListener("click", buscar);
+
+    function safe(v) {
+      return String(v ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function setMsg(text, type = "success") {
+      mensaje.textContent = text;
+      mensaje.className = `msg show ${type}`;
+    }
+
+    function clearMsg() {
+      mensaje.textContent = "";
+      mensaje.className = "msg";
+    }
+
+    function renderKpi(telefono, total) {
+      kpi.innerHTML = `
+        <div class="pill"><strong>Teléfono:</strong> ${safe(telefono)}</div>
+        <div class="pill"><strong>Coincidencias:</strong> ${safe(total)}</div>
+      `;
+    }
+
+    async function buscar() {
+      const telefono = input.value.trim();
+
+      clearMsg();
+      kpi.innerHTML = "";
+      resultado.innerHTML = "";
+      resultado.style.display = "none";
+      btn.disabled = true;
+      btn.textContent = "Buscando...";
+
+      try {
+        if (!/^\d{10}$/.test(telefono)) {
+          setMsg("Ingresa un teléfono válido de 10 dígitos.", "error");
+          return;
+        }
+
+        const resp = await fetch(`/api/cozmo/buscar?telefono=${encodeURIComponent(telefono)}`);
+        const data = await resp.json();
+
+        if (!resp.ok) {
+          setMsg(data.mensaje || "Error en la consulta.", "error");
+          return;
+        }
+
+        renderKpi(data.telefono, data.total);
+        setMsg(`Consulta exitosa: ${data.total} registro(s) encontrado(s).`, "success");
+
+        const rows = data.resultados.map((item, idx) => `
+          <tr>
+            <td>${idx + 1}</td>
+            <td>${safe(item.excelRow ?? "")}</td>
+            <td>${safe(item.fullName)}</td>
+            <td>${safe(item.subcredito)}</td>
+            <td>${safe(item.emailAddress)}</td>
+            <td>${safe(item.outstandingBalance)}</td>
+            <td>${safe(item.daysPastDue)}</td>
+            <td>${safe(item.ca)}</td>
+          </tr>
+        `).join("");
+
+        resultado.innerHTML = `
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Fila Excel</th>
+                <th>B - Full Name</th>
+                <th>AB - SUBCREDITO</th>
+                <th>G - Email Address</th>
+                <th>J - Outstanding Balance</th>
+                <th>K - Days past due</th>
+                <th>AA - CA</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        `;
+        resultado.style.display = "block";
+
+      } catch (error) {
+        setMsg("No se pudo conectar con el servidor.", "error");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Buscar";
+      }
+    }
+  </script>
+</body>
+</html>

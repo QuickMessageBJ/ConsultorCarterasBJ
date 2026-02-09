@@ -1,0 +1,17 @@
+{
+  "name": "consultor_cartera",
+  "version": "1.0.0",
+  "description": "Consulta de cartera COZMO/RAC con Node + Excel",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"No tests\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "express": "^5.2.1"
+  }
+}

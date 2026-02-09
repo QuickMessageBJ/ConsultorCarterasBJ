@@ -9,13 +9,8 @@ let indexTelefono = new Map();
 function limpiarTelefono(valor) {
   if (valor === null || valor === undefined) return "";
   let txt = String(valor).trim();
-
-  // solo dígitos
   txt = txt.replace(/\D/g, "");
-
-  // si viene con prefijo (ej 52...), toma los últimos 10
   if (txt.length > 10) txt = txt.slice(-10);
-
   return txt;
 }
 
@@ -38,43 +33,63 @@ function valorTexto(valor) {
 }
 
 async function cargarIndiceCozmo() {
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.readFile(EXCEL_PATH);
-
-  const ws = workbook.worksheets[0];
-  if (!ws) throw new Error("No se encontró hoja en el Excel de COZMO.");
-
   const nuevoIndice = new Map();
 
-  // fila 1 headers
-  for (let i = 2; i <= ws.rowCount; i++) {
-    const row = ws.getRow(i);
+  // LECTURA STREAMING (clave para evitar OOM en Render)
+  const workbookReader = new ExcelJS.stream.xlsx.WorkbookReader(EXCEL_PATH, {
+    entries: "emit",
+    worksheets: "emit",
+    sharedStrings: "cache",
+    hyperlinks: "ignore",
+    styles: "ignore"
+  });
 
-    const telefono = limpiarTelefono(row.getCell(6).value); // F - Mobile Number
-    if (!telefono || telefono.length !== 10) continue;
+  let primeraHojaProcesada = false;
+  let totalRegistros = 0;
 
-    const item = {
-      excelRow: i,                                         // para identificar cada registro
-      fullName: valorTexto(row.getCell(2).value),          // B
-      emailAddress: valorTexto(row.getCell(7).value),      // G
-      outstandingBalance: valorTexto(row.getCell(10).value),// J
-      daysPastDue: valorTexto(row.getCell(11).value),      // K
-      ca: valorTexto(row.getCell(27).value),               // AA
-      subcredito: valorTexto(row.getCell(28).value),       // AB
-    };
+  for await (const worksheetReader of workbookReader) {
+    if (primeraHojaProcesada) break; // solo primera hoja
 
-    if (!nuevoIndice.has(telefono)) {
-      nuevoIndice.set(telefono, []);
+    for await (const chunk of worksheetReader) {
+      const rows = Array.isArray(chunk) ? chunk : [chunk];
+
+      for (const row of rows) {
+        const values = row?.values || [];
+        const rowNum = row?.number || 0;
+
+        // Saltar encabezado
+        if (rowNum === 1) continue;
+
+        const telefono = limpiarTelefono(values[6]); // F - Mobile Number
+        if (!telefono || telefono.length !== 10) continue;
+
+        const item = {
+          excelRow: rowNum,
+          fullName: valorTexto(values[2]),             // B  - Full Name
+          emailAddress: valorTexto(values[7]),         // G  - Email Address
+          outstandingBalance: valorTexto(values[10]),  // J  - Outstanding Balance
+          daysPastDue: valorTexto(values[11]),         // K  - Days past due
+          ca: valorTexto(values[27]),                  // AA - CA
+          subcredito: valorTexto(values[28])           // AB - SUBCREDITO
+        };
+
+        if (!nuevoIndice.has(telefono)) {
+          nuevoIndice.set(telefono, []);
+        }
+
+        nuevoIndice.get(telefono).push(item);
+        totalRegistros++;
+      }
     }
 
-    // IMPORTANTE: push para guardar TODOS los repetidos
-    nuevoIndice.get(telefono).push(item);
+    primeraHojaProcesada = true;
   }
 
   indexTelefono = nuevoIndice;
 
-  console.log("✅ COZMO indexado");
+  console.log("✅ COZMO indexado (streaming)");
   console.log("Teléfonos únicos:", indexTelefono.size);
+  console.log("Registros indexados:", totalRegistros);
 }
 
 function buscarPorTelefono(telefono) {
